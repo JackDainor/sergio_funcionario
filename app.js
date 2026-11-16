@@ -464,19 +464,26 @@
     row.innerHTML = `
       <label>Persona<select class="fj-person"><option value="">—</option>${opts}</select></label>
       <label>Máquina<select class="fj-machine"><option value="recta">Recta</option><option value="over">Over</option></select></label>
-      <label>Pago (R$)<input type="number" class="fj-pay" min="0" step="0.01" placeholder="0,00"></label>`;
+      <label>Por prenda (R$)<input type="number" class="fj-pay" min="0" step="0.01" placeholder="0,00"></label>`;
     wrap.appendChild(row);
     row.querySelectorAll('input,select').forEach(el => el.addEventListener('input', calcMachine));
     calcMachine();
   }
 
   function calcMachine() {
+    const pieces = Number($('jobPieces')?.value) || 0;
     let total = 0;
     document.querySelectorAll('#machineRows .machine-row').forEach(row => {
-      const pay = Number(row.querySelector('.fj-pay')?.value) || 0;
-      total += pay;
+      const unit = Number(row.querySelector('.fj-pay')?.value) || 0;
+      total += pieces * unit;
     });
     $('machineTotal').textContent = money(total);
+    const detail = $('machineDetail');
+    if (detail) {
+      detail.textContent = pieces
+        ? `(${pieces} prendas × montos por prenda)`
+        : '';
+    }
     return total;
   }
 
@@ -614,7 +621,7 @@
   $('closeJob').addEventListener('click', closeJob);
   $('cancelJob').addEventListener('click', closeJob);
   $('jobPayMode').addEventListener('change', () => { togglePayMode(); calcCompleto(); calcMachine(); });
-  $('jobPieces').addEventListener('input', calcCompleto);
+  $('jobPieces').addEventListener('input', () => { calcCompleto(); calcMachine(); });
   $('addMachineRow').addEventListener('click', addMachineRow);
   $('jobPhoto').addEventListener('change', async e => {
     const file = e.target.files?.[0];
@@ -663,13 +670,14 @@
       document.querySelectorAll('#machineRows .machine-row').forEach(row => {
         const funcionarioId = row.querySelector('.fj-person')?.value;
         const machine = row.querySelector('.fj-machine')?.value;
-        const pay = Number(row.querySelector('.fj-pay')?.value) || 0;
-        if (!funcionarioId || pay <= 0) return;
-        workers.push({ funcionarioId, machine, pay });
+        const unit = Number(row.querySelector('.fj-pay')?.value) || 0;
+        if (!funcionarioId || unit <= 0) return;
+        const pay = pieces * unit;
+        workers.push({ funcionarioId, machine, pieces, rate: unit, pay });
         totalPay += pay;
       });
       if (!workers.length) {
-        showToast('Añadí al menos una persona con el monto a pagar.');
+        showToast('Añadí al menos una persona con el monto por prenda.');
         return;
       }
     }
