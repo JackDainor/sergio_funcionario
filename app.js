@@ -8,6 +8,11 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const monthISO = () => todayISO().slice(0, 7);
+  const monthName = m => {
+    if (!m) return '';
+    const [y, mo] = m.split('-').map(Number);
+    return new Date(y, mo - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  };
 
   function loadState() {
     try {
@@ -99,7 +104,7 @@
 
   function setTab(tab) {
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    ['funcs', 'providers', 'jobs', 'vales', 'rates'].forEach(t => {
+    ['funcs', 'providers', 'jobs', 'vales', 'reports', 'rates'].forEach(t => {
       const el = $(t + 'Panel');
       if (el) el.classList.toggle('hidden', t !== tab);
     });
@@ -108,6 +113,7 @@
     if (tab === 'jobs') renderJobs();
     if (tab === 'funcs') renderFuncs();
     if (tab === 'providers') renderProviders();
+    if (tab === 'reports') renderReports();
   }
 
   function renderStats() {
@@ -208,12 +214,205 @@
     }
   }
 
+
+  function jobsForFuncionario(funcId, month) {
+    return state.jobs
+      .filter(j => (j.date || '').startsWith(month) && (j.workers || []).some(w => w.funcionarioId === funcId))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  }
+
+  function payForFuncionarioInJob(job, funcId) {
+    const w = (job.workers || []).find(x => x.funcionarioId === funcId);
+    return Number(w?.pay) || 0;
+  }
+
+  function valesForFuncionario(funcId, month) {
+    return state.vales.filter(v => v.funcionarioId === funcId && (v.date || '').startsWith(month));
+  }
+
+  function renderReports() {
+    const list = $('reportsList');
+    if (!list) return;
+    const m = $('monthFilter').value;
+    const fs = state.funcionarios.slice().sort((a, b) => a.name.localeCompare(b.name));
+    list.innerHTML = fs.map(f => {
+      const jobs = jobsForFuncionario(f.id, m);
+      const totalPay = jobs.reduce((s, j) => s + payForFuncionarioInJob(j, f.id), 0);
+      const valesSum = valesForFuncionario(f.id, m).reduce((s, v) => s + Number(v.amount || 0), 0);
+      const neto = totalPay - valesSum;
+      const hasData = jobs.length > 0 || valesSum > 0;
+      return `<article class="report-card"><div class="provider-icon">▧</div><div class="provider-main"><h3>${escapeHTML(f.name)}</h3><p>${jobs.length} corte(s) · Ganado ${money(totalPay)} · Vales ${money(valesSum)}<br><strong>Neto: ${money(neto)}</strong></p></div><button class="primary" data-pdf="${f.id}" ${hasData ? '' : 'disabled'}>Compartir PDF ↗</button></article>`;
+    }).join('');
+    $('emptyReports')?.classList.toggle('hidden', fs.length > 0);
+    if (!fs.length) list.innerHTML = '';
+  }
+
+  async function exportFuncPDF(funcId) {
+    const f = getFunc(funcId);
+    const m = $('monthFilter').value;
+    if (!f) return;
+    const jobs = jobsForFuncionario(funcId, m);
+    const vales = valesForFuncionario(funcId, m);
+    const totalPay = jobs.reduce((s, j) => s + payForFuncionarioInJob(j, f.id), 0);
+    const valesSum = vales.reduce((s, v) => s + Number(v.amount || 0), 0);
+    const neto = totalPay - valesSum;
+
+    if (!jobs.length && !vales.length) {
+      showToast('Este funcionario no tiene movimientos en el mes.');
+      return;
+    }
+    if (!window.jspdf?.jsPDF) {
+      showToast('No se pudo cargar el generador de PDF. Revisá la conexión.');
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = 210, pageH = 297, margin = 10;
+    let y = 12;
+
+    // Header
+    doc.setFillColor(25, 59, 50);
+    doc.roundedRect(margin, y, pageW - margin * 2, 22, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('INFORME DE FUNCIONARIO', margin + 5, y + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Funcionario: ${f.name}`, margin + 5, y + 15);
+    doc.text(`Mes: ${monthName(m)}`, pageW - margin - 5, y + 15, { align: 'right' });
+    y += 28;
+
+    // Column headers for jobs
+    doc.setTextColor(45, 65, 55);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('FECHA', margin + 2, y);
+    doc.text('MODELO / PROVEEDOR', margin + 28, y);
+    doc.text('PAGO', pageW - margin - 2, y, { align: 'right' });
+    y += 4;
+    doc.setDrawColor(200, 210, 205);
+    doc.line(margin, y, pageW - margin, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+
+    if (!jobs.length) {
+      doc.setTextColor(120, 130, 123);
+      doc.text('Sin cortes registrados este mes.', margin + 2, y);
+      y += 8;
+    } else {
+      for (const j of jobs) {
+        if (y > pageH - 45) {
+          doc.addPage();
+          y = 15;
+        }
+        const pay = payForFuncionarioInJob(j, f.id);
+        const prov = getProvider(j.providerId);
+        const w = (j.workers || []).find(x => x.funcionarioId === f.id);
+        const detail = w?.machine
+          ? (w.pieces ? `${w.pieces} pzas · ${w.machine}` : w.machine)
+          : (j.payMode === 'por_maquina' ? 'por máquina' : 'pago completo');
+
+        doc.setTextColor(35, 54, 44);
+        doc.setFont('helvetica', 'normal');
+        doc.text(j.date || '', margin + 2, y);
+        doc.setFont('helvetica', 'bold');
+        const titleLines = doc.splitTextToSize(j.title || '', 100);
+        doc.text(titleLines.slice(0, 2), margin + 28, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 110, 105);
+        doc.text(`${prov?.name || '—'} · ${detail}`, margin + 28, y + 4);
+        doc.setFontSize(8);
+        doc.setTextColor(35, 54, 44);
+        doc.setFont('helvetica', 'bold');
+        doc.text(money(pay), pageW - margin - 2, y, { align: 'right' });
+        y += Math.max(10, titleLines.slice(0, 2).length * 4 + 6);
+      }
+    }
+
+    // Vales section
+    y += 4;
+    if (y > pageH - 50) { doc.addPage(); y = 15; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(45, 65, 55);
+    doc.text('VALES DEL MES', margin + 2, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    if (!vales.length) {
+      doc.setTextColor(120, 130, 123);
+      doc.text('Sin vales este mes.', margin + 2, y);
+      y += 8;
+    } else {
+      for (const v of vales) {
+        if (y > pageH - 40) { doc.addPage(); y = 15; }
+        doc.setTextColor(35, 54, 44);
+        doc.text(v.date || '', margin + 2, y);
+        doc.text(v.note || 'Vale', margin + 28, y);
+        doc.setTextColor(150, 70, 50);
+        doc.text(`− ${money(v.amount)}`, pageW - margin - 2, y, { align: 'right' });
+        y += 6;
+      }
+    }
+
+    // Totals box
+    y += 6;
+    if (y > pageH - 35) { doc.addPage(); y = 15; }
+    const boxH = 28;
+    doc.setFillColor(232, 242, 236);
+    doc.roundedRect(margin, y, pageW - margin * 2, boxH, 2, 2, 'F');
+    doc.setTextColor(45, 105, 85);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Total ganado (cortes): ${money(totalPay)}`, margin + 5, y + 8);
+    doc.setTextColor(150, 70, 50);
+    doc.text(`Total vales: ${money(valesSum)}`, margin + 5, y + 15);
+    doc.setTextColor(25, 59, 50);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`PAGO NETO: ${money(neto)}`, pageW - margin - 5, y + 18, { align: 'right' });
+
+    doc.setTextColor(120, 130, 123);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.text('Generado desde SY CROP Funcionarios · Valores en reales (BRL)', pageW / 2, pageH - 6, { align: 'center' });
+
+    const safe = f.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const filename = `informe-${safe}-${m}.pdf`;
+
+    try {
+      const blob = doc.output('blob');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Informe ${f.name} — ${monthName(m)}`,
+          text: `Informe SY CROP Funcionarios — ${f.name}`
+        });
+        showToast('PDF compartido.');
+        return;
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        showToast('Compartir cancelado.');
+        return;
+      }
+    }
+    doc.save(filename);
+    showToast('PDF generado para ' + f.name + '.');
+  }
+
   function renderAll() {
     fillRatesForm();
     renderFuncs();
     renderProviders();
     renderJobs();
     renderVales();
+    renderReports();
   }
 
   function compressImage(file) {
@@ -265,19 +464,17 @@
     row.innerHTML = `
       <label>Persona<select class="fj-person"><option value="">—</option>${opts}</select></label>
       <label>Máquina<select class="fj-machine"><option value="recta">Recta</option><option value="over">Over</option></select></label>
-      <label>Prendas<input type="number" class="fj-pcs" min="0" step="1" placeholder="0"></label>`;
+      <label>Pago (R$)<input type="number" class="fj-pay" min="0" step="0.01" placeholder="0,00"></label>`;
     wrap.appendChild(row);
     row.querySelectorAll('input,select').forEach(el => el.addEventListener('input', calcMachine));
     calcMachine();
   }
 
   function calcMachine() {
-    const r = readRatesFromForm(false);
     let total = 0;
     document.querySelectorAll('#machineRows .machine-row').forEach(row => {
-      const machine = row.querySelector('.fj-machine')?.value;
-      const pcs = Number(row.querySelector('.fj-pcs')?.value) || 0;
-      total += pcs * (machine === 'over' ? r.over : r.recta);
+      const pay = Number(row.querySelector('.fj-pay')?.value) || 0;
+      total += pay;
     });
     $('machineTotal').textContent = money(total);
     return total;
@@ -466,15 +663,13 @@
       document.querySelectorAll('#machineRows .machine-row').forEach(row => {
         const funcionarioId = row.querySelector('.fj-person')?.value;
         const machine = row.querySelector('.fj-machine')?.value;
-        const pcs = Number(row.querySelector('.fj-pcs')?.value) || 0;
-        if (!funcionarioId || pcs <= 0) return;
-        const rate = machine === 'over' ? rates.over : rates.recta;
-        const pay = pcs * rate;
-        workers.push({ funcionarioId, machine, pieces: pcs, rate, pay });
+        const pay = Number(row.querySelector('.fj-pay')?.value) || 0;
+        if (!funcionarioId || pay <= 0) return;
+        workers.push({ funcionarioId, machine, pay });
         totalPay += pay;
       });
       if (!workers.length) {
-        showToast('Añadí al menos una persona con prendas.');
+        showToast('Añadí al menos una persona con el monto a pagar.');
         return;
       }
     }
@@ -554,6 +749,11 @@
       renderAll();
       showToast('Vale eliminado.');
     });
+  });
+
+    document.body.addEventListener('click', e => {
+    const b = e.target.closest('[data-pdf]');
+    if (b && b.dataset.pdf) exportFuncPDF(b.dataset.pdf);
   });
 
   $('saveRatesBtn').addEventListener('click', () => {

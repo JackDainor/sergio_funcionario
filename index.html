@@ -16,7 +16,7 @@
 <body>
 <header class="topbar">
   <img class="brand-logo" src="logo.png" alt="SY CROP" width="40" height="40">
-  <div class="brand"><strong>SY CROP - FUNCIONARIOS</strong><span>Funcionarios · Producción</span></div>
+  <div class="brand"><strong>SY CROP</strong><span>Funcionarios · Producción</span></div>
   <div class="topbar-actions">
     <button id="installBtn" class="install-btn hidden" title="Instalar">Instalar</button>
     <button id="themeBtn" class="icon-btn" title="Tema" aria-label="Tema">☼</button>
@@ -44,6 +44,7 @@
     <button class="tab" data-tab="providers">Proveedores</button>
     <button class="tab" data-tab="jobs">Producción</button>
     <button class="tab" data-tab="vales">Vales</button>
+    <button class="tab" data-tab="reports">Informes PDF</button>
     <button class="tab" data-tab="rates">Tarifas</button>
   </nav>
   <section id="funcsPanel" class="panel">
@@ -91,6 +92,16 @@
     <div id="valesList" class="cuts-list"></div>
     <div id="emptyVales" class="empty hidden"><div class="empty-art">$</div><h3>Sin vales este mes</h3></div>
   </section>
+
+  <section id="reportsPanel" class="panel hidden">
+    <div class="section-heading">
+      <div><h2>Informes PDF</h2><p class="muted">Un PDF por funcionario con sus cortes del mes, total ganado, vales y neto a pagar.</p></div>
+    </div>
+    <div class="report-note">Podés compartir el PDF por WhatsApp u otras apps. Usa el mes seleccionado arriba.</div>
+    <div id="reportsList" class="provider-grid"></div>
+    <div id="emptyReports" class="empty hidden"><div class="empty-art">▧</div><h3>Sin datos este mes</h3><p>Registrá producción o vales para generar informes.</p></div>
+  </section>
+
   <section id="ratesPanel" class="panel hidden">
     <div class="section-heading"><div><h2>Tarifas</h2><p class="muted">Editables. Se usan al calcular el pago.</p></div></div>
     <div class="form-subbox">
@@ -130,7 +141,7 @@
         <label class="full">Forma de pago
           <select id="jobPayMode" required>
             <option value="completo">Pago completo (prendas × tarifa prenda)</option>
-            <option value="por_maquina">Por máquina (recta / over)</option>
+            <option value="por_maquina">Por máquina (recta / over · monto libre)</option>
           </select>
         </label>
         <div id="completoBox" class="full form-subbox">
@@ -140,7 +151,7 @@
             <span class="muted small" id="completoDetail"></span></p>
         </div>
         <div id="maquinaBox" class="full form-subbox hidden">
-          <p class="muted small">Persona, máquina y prendas. Pago = prendas × tarifa.</p>
+          <p class="muted small">Persona, máquina y <strong>cuánto pagás</strong> por esa máquina (vos editás el monto).</p>
           <div id="machineRows"></div>
           <button type="button" class="secondary" id="addMachineRow">＋ Añadir persona</button>
           <p style="margin-top:8px">Total: <strong id="machineTotal">R$ 0,00</strong></p>
@@ -184,6 +195,7 @@
   </div>
 </div>
 <div id="toast" class="toast" role="status"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
