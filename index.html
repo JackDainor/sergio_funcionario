@@ -41,6 +41,7 @@
   </section>
   <nav class="tabs">
     <button class="tab active" data-tab="funcs">Equipo</button>
+    <button class="tab" data-tab="providers">Proveedores</button>
     <button class="tab" data-tab="jobs">Producción</button>
     <button class="tab" data-tab="vales">Vales</button>
     <button class="tab" data-tab="rates">Tarifas</button>
@@ -58,6 +59,21 @@
     <div id="funcsList" class="provider-grid"></div>
     <div id="emptyFuncs" class="empty"><div class="empty-art">👥</div><h3>Sin funcionarios</h3><p>Añadí al equipo para empezar.</p></div>
   </section>
+
+  <section id="providersPanel" class="panel hidden">
+    <div class="section-heading">
+      <div><h2>Proveedores</h2><p class="muted">Para indicar de qué proveedor es cada trabajo del equipo.</p></div>
+      <button class="primary" id="addProviderBtn">＋ Nuevo proveedor</button>
+    </div>
+    <form id="providerForm" class="inline-form hidden">
+      <label>Nombre<input id="providerName" maxlength="80" required placeholder="Ej. Confecções Silva"></label>
+      <button class="primary" type="submit">Guardar</button>
+      <button type="button" class="secondary" id="cancelProvider">Cancelar</button>
+    </form>
+    <div id="providersList" class="provider-grid"></div>
+    <div id="emptyProviders" class="empty"><div class="empty-art">♧</div><h3>Sin proveedores</h3><p>Añadí proveedores para asociarlos a la producción.</p></div>
+  </section>
+
   <section id="jobsPanel" class="panel hidden">
     <div class="section-heading">
       <div><h2>Producción del mes</h2><p class="muted">Foto, prenda, quiénes, pago completo o por máquina.</p></div>
@@ -97,6 +113,12 @@
       <div class="form-grid">
         <label>Fecha<input id="jobDate" type="date" required></label>
         <label>Prendas totales<input id="jobPieces" type="number" min="1" step="1" required></label>
+        <label class="full">Proveedor
+          <select id="jobProvider" required>
+            <option value="">Seleccionar proveedor…</option>
+          </select>
+          <small>¿No está? Añadilo en la pestaña Proveedores.</small>
+        </label>
         <label class="full">Nombre de la prenda<input id="jobTitle" maxlength="120" required placeholder="Ej. Crop top negro"></label>
         <label class="full">Foto <span class="optional">(opcional)</span>
           <input id="jobPhoto" type="file" accept="image/*">

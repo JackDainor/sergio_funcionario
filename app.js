@@ -15,12 +15,14 @@
       if (x && Array.isArray(x.funcionarios)) {
         if (!Array.isArray(x.jobs)) x.jobs = [];
         if (!Array.isArray(x.vales)) x.vales = [];
+        if (!Array.isArray(x.providers)) x.providers = [];
         if (!x.rates) x.rates = { prenda: 1.4, recta: 1.0, over: 0.4 };
         return x;
       }
     } catch (e) {}
     return {
       funcionarios: [],
+      providers: [],
       jobs: [],
       vales: [],
       rates: { prenda: 1.4, recta: 1.0, over: 0.4 },
@@ -86,6 +88,10 @@
     return state.funcionarios.find(f => f.id === id);
   }
 
+  function getProvider(id) {
+    return (state.providers || []).find(p => p.id === id);
+  }
+
   function monthJobs() {
     const m = $('monthFilter').value;
     return state.jobs.filter(j => (j.date || '').startsWith(m));
@@ -93,7 +99,7 @@
 
   function setTab(tab) {
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    ['funcs', 'jobs', 'vales', 'rates'].forEach(t => {
+    ['funcs', 'providers', 'jobs', 'vales', 'rates'].forEach(t => {
       const el = $(t + 'Panel');
       if (el) el.classList.toggle('hidden', t !== tab);
     });
@@ -101,6 +107,7 @@
     if (tab === 'vales') renderVales();
     if (tab === 'jobs') renderJobs();
     if (tab === 'funcs') renderFuncs();
+    if (tab === 'providers') renderProviders();
   }
 
   function renderStats() {
@@ -134,6 +141,30 @@
     list.classList.toggle('hidden', fs.length === 0);
   }
 
+
+  function renderProviders() {
+    renderStats();
+    const list = $('providersList');
+    if (!list) return;
+    const ps = (state.providers || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    const m = $('monthFilter').value;
+    list.innerHTML = ps.map(p => {
+      const n = state.jobs.filter(j => j.providerId === p.id && (j.date || '').startsWith(m)).length;
+      return `<article class="provider-card"><div class="provider-icon">♧</div><div class="provider-main"><h3>${escapeHTML(p.name)}</h3><p>${n} trabajo(s) este mes</p></div><div class="provider-actions"><button class="mini-btn" data-prov-del="${p.id}">Eliminar</button></div></article>`;
+    }).join('');
+    $('emptyProviders')?.classList.toggle('hidden', ps.length > 0);
+    list.classList.toggle('hidden', ps.length === 0);
+  }
+
+  function fillJobProviderSelect(selected) {
+    const sel = $('jobProvider');
+    if (!sel) return;
+    const opts = (state.providers || []).slice().sort((a, b) => a.name.localeCompare(b.name))
+      .map(p => `<option value="${p.id}" ${selected === p.id ? 'selected' : ''}>${escapeHTML(p.name)}</option>`).join('');
+    sel.innerHTML = '<option value="">Seleccionar proveedor…</option>' + opts;
+    if (selected) sel.value = selected;
+  }
+
   function renderJobs() {
     renderStats();
     const el = $('jobsList');
@@ -147,7 +178,8 @@
       const thumb = j.photo
         ? `<img src="${j.photo}" alt="">`
         : '✂';
-      return `<article class="cut-card"><div class="cut-thumb">${thumb}</div><div class="cut-info"><h3>${escapeHTML(j.title)}</h3><div class="cut-meta"><span>${j.pieces} prendas</span><span>${escapeHTML(j.date)}</span><span>${j.payMode === 'por_maquina' ? 'Por máquina' : 'Completo'}</span></div><p class="muted" style="margin:6px 0 0;font-size:12px">${names}</p></div><div class="cut-money"><div><strong>${money(j.totalPay)}</strong><small>a pagar</small></div><div class="cut-actions"><button class="mini-btn" data-job-del="${j.id}">Eliminar</button></div></div></article>`;
+      const prov = getProvider(j.providerId);
+      return `<article class="cut-card"><div class="cut-thumb">${thumb}</div><div class="cut-info"><h3>${escapeHTML(j.title)}</h3><div class="cut-meta"><span>♧ ${escapeHTML(prov?.name || 'Sin proveedor')}</span><span>${j.pieces} prendas</span><span>${escapeHTML(j.date)}</span><span>${j.payMode === 'por_maquina' ? 'Por máquina' : 'Completo'}</span></div><p class="muted" style="margin:6px 0 0;font-size:12px">${names}</p></div><div class="cut-money"><div><strong>${money(j.totalPay)}</strong><small>a pagar</small></div><div class="cut-actions"><button class="mini-btn" data-job-del="${j.id}">Eliminar</button></div></div></article>`;
     }).join('');
     $('emptyJobs').classList.toggle('hidden', jobs.length > 0);
     el.classList.toggle('hidden', jobs.length === 0);
@@ -179,6 +211,7 @@
   function renderAll() {
     fillRatesForm();
     renderFuncs();
+    renderProviders();
     renderJobs();
     renderVales();
   }
@@ -275,11 +308,17 @@
       setTab('funcs');
       return;
     }
+    if (!(state.providers || []).length) {
+      showToast('Primero registrá un proveedor.');
+      setTab('providers');
+      return;
+    }
     $('jobForm').reset();
     $('jobDate').value = todayISO();
     jobPhoto = '';
     $('jobPhotoWrap').classList.add('hidden');
     $('machineRows').innerHTML = '';
+    fillJobProviderSelect();
     buildWorkerChecks();
     $('jobPayMode').value = 'completo';
     togglePayMode();
@@ -332,6 +371,48 @@
     });
   });
 
+
+  // Proveedores
+  $('addProviderBtn')?.addEventListener('click', () => {
+    $('providerForm')?.classList.remove('hidden');
+    $('providerName')?.focus();
+  });
+  $('cancelProvider')?.addEventListener('click', () => {
+    $('providerForm')?.classList.add('hidden');
+    $('providerForm')?.reset();
+  });
+  $('providerForm')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = $('providerName').value.trim();
+    if (!name) return;
+    if (!state.providers) state.providers = [];
+    if (state.providers.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      showToast('Ya existe ese proveedor.');
+      return;
+    }
+    state.providers.push({ id: crypto.randomUUID(), name });
+    save();
+    $('providerForm').reset();
+    $('providerForm').classList.add('hidden');
+    renderAll();
+    showToast('Proveedor añadido.');
+  });
+  $('providersList')?.addEventListener('click', e => {
+    const del = e.target.closest('[data-prov-del]');
+    if (!del) return;
+    const p = getProvider(del.dataset.provDel);
+    if (!p) return;
+    const used = state.jobs.some(j => j.providerId === p.id);
+    askConfirm('Eliminar proveedor', used
+      ? `¿Eliminar “${p.name}”? Los trabajos ya guardados conservarán el id, pero no el nombre.`
+      : `¿Eliminar “${p.name}”?`, () => {
+      state.providers = state.providers.filter(x => x.id !== p.id);
+      save();
+      renderAll();
+      showToast('Proveedor eliminado.');
+    });
+  });
+
   $('addJobBtn').addEventListener('click', openJob);
   $('closeJob').addEventListener('click', closeJob);
   $('cancelJob').addEventListener('click', closeJob);
@@ -360,6 +441,11 @@
     const date = $('jobDate').value;
     const pieces = Number($('jobPieces').value);
     const payMode = $('jobPayMode').value;
+    const providerId = $('jobProvider')?.value || '';
+    if (!providerId) {
+      showToast('Seleccioná el proveedor de este trabajo.');
+      return;
+    }
     if (!title || !date || !(pieces > 0)) {
       showToast('Completá fecha, prenda y cantidad.');
       return;
@@ -396,6 +482,7 @@
       id: crypto.randomUUID(),
       date,
       title,
+      providerId,
       pieces,
       photo: jobPhoto || '',
       payMode,

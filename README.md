@@ -3,6 +3,7 @@
 App **instalable** solo para el equipo de trabajo:
 
 - Equipo (funcionarios)
+- Proveedores (para asociar cada trabajo)
 - Producción (foto, prenda, pago completo R$1,40/prenda o por máquina recta/over)
 - Vales por persona
 - Tarifas editables
