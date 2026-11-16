@@ -121,6 +121,7 @@
     <div class="modal-head"><div><p class="eyebrow">PRODUCCIÓN</p><h2>Registrar trabajo</h2></div>
       <button class="icon-btn" id="closeJob" aria-label="Cerrar">×</button></div>
     <form id="jobForm">
+      <input type="hidden" id="jobId" value="">
       <div class="form-grid">
         <label>Fecha<input id="jobDate" type="date" required></label>
         <label>Prendas totales<input id="jobPieces" type="number" min="1" step="1" required></label>
@@ -145,7 +146,11 @@
           </select>
         </label>
         <div id="completoBox" class="full form-subbox">
-          <p class="muted small">Quiénes participaron (reparto igual del total):</p>
+          <label>Precio por prenda (R$)
+            <input id="jobUnitPrice" type="number" min="0" step="0.01" value="1.40">
+            <small>Podés editarlo; no siempre es 1,40.</small>
+          </label>
+          <p class="muted small" style="margin-top:10px">Quiénes participaron (reparto igual del total):</p>
           <div id="workersCheck" class="check-list"></div>
           <p style="margin-top:10px">Total: <strong id="completoTotal">R$ 0,00</strong>
             <span class="muted small" id="completoDetail"></span></p>

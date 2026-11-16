@@ -185,7 +185,7 @@
         ? `<img src="${j.photo}" alt="">`
         : '✂';
       const prov = getProvider(j.providerId);
-      return `<article class="cut-card"><div class="cut-thumb">${thumb}</div><div class="cut-info"><h3>${escapeHTML(j.title)}</h3><div class="cut-meta"><span>♧ ${escapeHTML(prov?.name || 'Sin proveedor')}</span><span>${j.pieces} prendas</span><span>${escapeHTML(j.date)}</span><span>${j.payMode === 'por_maquina' ? 'Por máquina' : 'Completo'}</span></div><p class="muted" style="margin:6px 0 0;font-size:12px">${names}</p></div><div class="cut-money"><div><strong>${money(j.totalPay)}</strong><small>a pagar</small></div><div class="cut-actions"><button class="mini-btn" data-job-del="${j.id}">Eliminar</button></div></div></article>`;
+      return `<article class="cut-card"><div class="cut-thumb">${thumb}</div><div class="cut-info"><h3>${escapeHTML(j.title)}</h3><div class="cut-meta"><span>♧ ${escapeHTML(prov?.name || 'Sin proveedor')}</span><span>${j.pieces} prendas</span><span>${escapeHTML(j.date)}</span><span>${j.payMode === 'por_maquina' ? 'Por máquina' : 'Completo'}</span></div><p class="muted" style="margin:6px 0 0;font-size:12px">${names}</p></div><div class="cut-money"><div><strong>${money(j.totalPay)}</strong><small>a pagar</small></div><div class="cut-actions"><button class="mini-btn" data-job-edit="${j.id}">Editar</button><button class="mini-btn" data-job-del="${j.id}">Eliminar</button></div></div></article>`;
     }).join('');
     $('emptyJobs').classList.toggle('hidden', jobs.length > 0);
     el.classList.toggle('hidden', jobs.length === 0);
@@ -488,14 +488,17 @@
   }
 
   function calcCompleto() {
-    const r = readRatesFromForm(false);
     const pieces = Number($('jobPieces').value) || 0;
-    const total = pieces * r.prenda;
+    let unit = Number($('jobUnitPrice')?.value);
+    if (Number.isNaN(unit) || unit < 0) unit = getRates().prenda;
+    const total = pieces * unit;
     const n = document.querySelectorAll('#workersCheck input:checked').length;
-    $('completoTotal').textContent = money(total);
-    $('completoDetail').textContent = n
-      ? `(${pieces} × ${money(r.prenda)} · ${n} pers. → ${money(total / n)} c/u)`
-      : `(${pieces} × ${money(r.prenda)})`;
+    if ($('completoTotal')) $('completoTotal').textContent = money(total);
+    if ($('completoDetail')) {
+      $('completoDetail').textContent = n
+        ? `(${pieces} × ${money(unit)} · ${n} pers. → ${money(total / n)} c/u)`
+        : `(${pieces} × ${money(unit)})`;
+    }
     return total;
   }
 
@@ -506,7 +509,7 @@
     if (mode === 'por_maquina' && !$('machineRows').children.length) addMachineRow();
   }
 
-  function openJob() {
+  function openJob(job = null) {
     if (!state.funcionarios.length) {
       showToast('Primero añadí funcionarios en Equipo.');
       setTab('funcs');
@@ -518,15 +521,48 @@
       return;
     }
     $('jobForm').reset();
-    $('jobDate').value = todayISO();
-    jobPhoto = '';
-    $('jobPhotoWrap').classList.add('hidden');
+    $('jobId').value = job?.id || '';
+    const modalTitle = document.querySelector('#jobModal h2');
+    if (modalTitle) modalTitle.textContent = job ? 'Editar trabajo' : 'Registrar trabajo';
+    $('jobDate').value = job?.date || todayISO();
+    $('jobPieces').value = job?.pieces ?? '';
+    $('jobTitle').value = job?.title || '';
+    $('jobNote').value = job?.note || '';
+    jobPhoto = job?.photo || '';
+    if (jobPhoto) {
+      $('jobPhotoPreview').src = jobPhoto;
+      $('jobPhotoWrap').classList.remove('hidden');
+    } else {
+      $('jobPhotoWrap').classList.add('hidden');
+    }
     $('machineRows').innerHTML = '';
-    fillJobProviderSelect();
+    fillJobProviderSelect(job?.providerId);
     buildWorkerChecks();
-    $('jobPayMode').value = 'completo';
+    // pre-check workers for completo
+    if (job && job.payMode === 'completo') {
+      (job.workers || []).forEach(w => {
+        const cb = document.querySelector(`#workersCheck input[value="${w.funcionarioId}"]`);
+        if (cb) cb.checked = true;
+      });
+    }
+    const unit = job?.rates?.prenda ?? job?.workers?.[0]?.rate ?? getRates().prenda;
+    if ($('jobUnitPrice')) $('jobUnitPrice').value = unit;
+    $('jobPayMode').value = job?.payMode || 'completo';
     togglePayMode();
+    if (job && job.payMode === 'por_maquina') {
+      $('machineRows').innerHTML = '';
+      (job.workers || []).forEach(w => {
+        addMachineRow();
+        const row = $('machineRows').lastElementChild;
+        if (!row) return;
+        if (row.querySelector('.fj-person')) row.querySelector('.fj-person').value = w.funcionarioId || '';
+        if (row.querySelector('.fj-machine')) row.querySelector('.fj-machine').value = w.machine || 'recta';
+        if (row.querySelector('.fj-pay')) row.querySelector('.fj-pay').value = w.rate ?? (w.pieces ? (w.pay / w.pieces) : w.pay) ?? '';
+      });
+      if (!(job.workers || []).length) addMachineRow();
+    }
     calcCompleto();
+    calcMachine();
     $('jobModal').classList.remove('hidden');
   }
 
@@ -622,6 +658,7 @@
   $('cancelJob').addEventListener('click', closeJob);
   $('jobPayMode').addEventListener('change', () => { togglePayMode(); calcCompleto(); calcMachine(); });
   $('jobPieces').addEventListener('input', () => { calcCompleto(); calcMachine(); });
+  $('jobUnitPrice')?.addEventListener('input', calcCompleto);
   $('addMachineRow').addEventListener('click', addMachineRow);
   $('jobPhoto').addEventListener('change', async e => {
     const file = e.target.files?.[0];
@@ -655,17 +692,20 @@
       return;
     }
     const rates = readRatesFromForm(true);
+    let unitPrice = Number($('jobUnitPrice')?.value);
+    if (Number.isNaN(unitPrice) || unitPrice < 0) unitPrice = rates.prenda;
+    rates.prenda = unitPrice; // snapshot del precio usado en este trabajo
     let workers = [];
     let totalPay = 0;
     if (payMode === 'completo') {
-      totalPay = pieces * rates.prenda;
+      totalPay = pieces * unitPrice;
       const checked = [...document.querySelectorAll('#workersCheck input:checked')].map(i => i.value);
       if (!checked.length) {
         showToast('Marcá quiénes participaron.');
         return;
       }
       const share = totalPay / checked.length;
-      workers = checked.map(id => ({ funcionarioId: id, pay: share, rate: rates.prenda }));
+      workers = checked.map(id => ({ funcionarioId: id, pay: share, rate: unitPrice }));
     } else {
       document.querySelectorAll('#machineRows .machine-row').forEach(row => {
         const funcionarioId = row.querySelector('.fj-person')?.value;
@@ -681,8 +721,9 @@
         return;
       }
     }
-    state.jobs.push({
-      id: crypto.randomUUID(),
+    const existingId = $('jobId')?.value || '';
+    const payload = {
+      id: existingId || crypto.randomUUID(),
       date,
       title,
       providerId,
@@ -693,15 +734,27 @@
       totalPay,
       rates: { ...rates },
       note: $('jobNote').value.trim(),
-      createdAt: new Date().toISOString()
-    });
+      createdAt: existingId
+        ? (state.jobs.find(j => j.id === existingId)?.createdAt || new Date().toISOString())
+        : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const ix = state.jobs.findIndex(j => j.id === payload.id);
+    if (ix >= 0) state.jobs[ix] = payload;
+    else state.jobs.push(payload);
     save();
     closeJob();
     renderAll();
-    showToast('Trabajo guardado.');
+    showToast(ix >= 0 ? 'Trabajo actualizado.' : 'Trabajo guardado.');
     setTab('jobs');
   });
   $('jobsList').addEventListener('click', e => {
+    const edit = e.target.closest('[data-job-edit]');
+    if (edit) {
+      const job = state.jobs.find(j => j.id === edit.dataset.jobEdit);
+      if (job) openJob(job);
+      return;
+    }
     const del = e.target.closest('[data-job-del]');
     if (!del) return;
     askConfirm('Eliminar trabajo', '¿Eliminar este registro?', () => {
