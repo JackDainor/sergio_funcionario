@@ -283,14 +283,15 @@
     doc.text(`Mes: ${monthName(m)}`, pageW - margin - 5, y + 15, { align: 'right' });
     y += 28;
 
-    // Column headers for jobs
+    // Column headers
     doc.setTextColor(45, 65, 55);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('FECHA', margin + 2, y);
-    doc.text('MODELO / PROVEEDOR', margin + 28, y);
+    doc.setFontSize(7);
+    doc.text('FOTO', margin + 2, y);
+    doc.text('FECHA', margin + 22, y);
+    doc.text('MODELO / DETALLE', margin + 44, y);
     doc.text('PAGO', pageW - margin - 2, y, { align: 'right' });
-    y += 4;
+    y += 3;
     doc.setDrawColor(200, 210, 205);
     doc.line(margin, y, pageW - margin, y);
     y += 5;
@@ -304,36 +305,65 @@
       y += 8;
     } else {
       for (const j of jobs) {
-        if (y > pageH - 45) {
+        if (y > pageH - 50) {
           doc.addPage();
           y = 15;
         }
         const pay = payForFuncionarioInJob(j, f.id);
         const prov = getProvider(j.providerId);
         const w = (j.workers || []).find(x => x.funcionarioId === f.id);
-        const detail = w?.machine
-          ? (w.pieces ? `${w.pieces} pzas · ${w.machine}` : w.machine)
-          : (j.payMode === 'por_maquina' ? 'por máquina' : 'pago completo');
+        const unit = Number(w?.rate ?? j.rates?.prenda ?? 0);
+        const pcs = Number(j.pieces) || Number(w?.pieces) || 0;
+        const modeLabel = j.payMode === 'por_maquina'
+          ? (w?.machine ? `por máquina (${w.machine})` : 'por máquina')
+          : 'pago completo';
 
+        const rowTop = y;
+        const thumb = 16;
+        // Photo
+        if (j.photo) {
+          try {
+            const fmt = j.photo.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG';
+            doc.addImage(j.photo, fmt, margin + 1, rowTop - 1, thumb, thumb);
+          } catch (err) {
+            doc.setFillColor(232, 242, 236);
+            doc.roundedRect(margin + 1, rowTop - 1, thumb, thumb, 1, 1, 'F');
+          }
+        } else {
+          doc.setFillColor(232, 242, 236);
+          doc.roundedRect(margin + 1, rowTop - 1, thumb, thumb, 1, 1, 'F');
+        }
+
+        const textX = margin + 22;
         doc.setTextColor(35, 54, 44);
         doc.setFont('helvetica', 'normal');
-        doc.text(j.date || '', margin + 2, y);
+        doc.setFontSize(7.5);
+        doc.text(j.date || '', textX, rowTop + 3);
+
         doc.setFont('helvetica', 'bold');
-        const titleLines = doc.splitTextToSize(j.title || '', 100);
-        doc.text(titleLines.slice(0, 2), margin + 28, y);
+        doc.setFontSize(8);
+        const titleLines = doc.splitTextToSize(j.title || '', 95);
+        doc.text(titleLines.slice(0, 2), margin + 44, rowTop + 3);
+
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7);
+        doc.setFontSize(6.5);
         doc.setTextColor(100, 110, 105);
-        doc.text(`${prov?.name || '—'} · ${detail}`, margin + 28, y + 4);
+        const unitStr = unit > 0 ? money(unit) : '—';
+        const detail = `${prov?.name || '—'} · ${modeLabel} · ${pcs} prendas · ${unitStr}/prenda`;
+        const detailLines = doc.splitTextToSize(detail, 95);
+        doc.text(detailLines.slice(0, 2), margin + 44, rowTop + 3 + titleLines.slice(0, 2).length * 3.5);
+
         doc.setFontSize(8);
         doc.setTextColor(35, 54, 44);
         doc.setFont('helvetica', 'bold');
-        doc.text(money(pay), pageW - margin - 2, y, { align: 'right' });
-        y += Math.max(10, titleLines.slice(0, 2).length * 4 + 6);
+        doc.text(money(pay), pageW - margin - 2, rowTop + 6, { align: 'right' });
+
+        const textH = 4 + titleLines.slice(0, 2).length * 3.5 + detailLines.slice(0, 2).length * 3;
+        y = rowTop + Math.max(thumb + 3, textH + 2);
       }
     }
 
-    // Vales section
+    // Vales
     y += 4;
     if (y > pageH - 50) { doc.addPage(); y = 15; }
     doc.setFont('helvetica', 'bold');
@@ -353,28 +383,41 @@
         doc.setTextColor(35, 54, 44);
         doc.text(v.date || '', margin + 2, y);
         doc.text(v.note || 'Vale', margin + 28, y);
-        doc.setTextColor(150, 70, 50);
+        doc.setTextColor(180, 45, 45);
         doc.text(`− ${money(v.amount)}`, pageW - margin - 2, y, { align: 'right' });
         y += 6;
       }
     }
 
-    // Totals box
+    // Totals box — neto verde (a cobrar) / rojo (debiendo)
     y += 6;
-    if (y > pageH - 35) { doc.addPage(); y = 15; }
-    const boxH = 28;
-    doc.setFillColor(232, 242, 236);
+    if (y > pageH - 38) { doc.addPage(); y = 15; }
+    const boxH = 30;
+    if (neto < 0) {
+      doc.setFillColor(255, 236, 236); // rojo suave
+    } else if (neto > 0) {
+      doc.setFillColor(232, 242, 236); // verde suave
+    } else {
+      doc.setFillColor(240, 240, 240);
+    }
     doc.roundedRect(margin, y, pageW - margin * 2, boxH, 2, 2, 'F');
     doc.setTextColor(45, 105, 85);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Total ganado (cortes): ${money(totalPay)}`, margin + 5, y + 8);
-    doc.setTextColor(150, 70, 50);
-    doc.text(`Total vales: ${money(valesSum)}`, margin + 5, y + 15);
-    doc.setTextColor(25, 59, 50);
+    doc.text(`Total ganado (cortes): ${money(totalPay)}`, margin + 5, y + 9);
+    doc.setTextColor(180, 45, 45);
+    doc.text(`Total vales: ${money(valesSum)}`, margin + 5, y + 16);
+
+    // Neto color
+    if (neto < 0) {
+      doc.setTextColor(180, 30, 30); // rojo — debe
+    } else {
+      doc.setTextColor(20, 120, 70); // verde — a cobrar / ganando
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(`PAGO NETO: ${money(neto)}`, pageW - margin - 5, y + 18, { align: 'right' });
+    const netoLabel = neto < 0 ? 'DEBE (neto): ' : 'PAGO NETO: ';
+    doc.text(`${netoLabel}${money(neto)}`, pageW - margin - 5, y + 20, { align: 'right' });
 
     doc.setTextColor(120, 130, 123);
     doc.setFont('helvetica', 'normal');
@@ -405,6 +448,7 @@
     doc.save(filename);
     showToast('PDF generado para ' + f.name + '.');
   }
+
 
   function renderAll() {
     fillRatesForm();
